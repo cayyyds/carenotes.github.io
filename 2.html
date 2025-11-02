@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>便签墙</title>
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', sans-serif;
+                background: linear-gradient(135deg, #F5F9FF 0%, #F0FFFA 50%, #FFFEF5 100%);
+                background-size: 200% 200%;
+                animation: gradientShift 35s ease-in-out infinite;
+                color: #333;
+                min-height: 100dvh;
+                overflow: hidden;
+                position: relative;
+            }
+
+            body::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: radial-gradient(circle at 30% 40%, rgba(180, 210, 230, 0.12) 0%, transparent 60%),
+                            radial-gradient(circle at 70% 60%, rgba(200, 230, 180, 0.10) 0%, transparent 60%);
+                animation: ambientMove 30s ease-in-out infinite;
+                z-index: 0;
+            }
+
+            @keyframes gradientShift {
+                0%, 100% { 
+                    background-position: 0% 50%;
+                    filter: hue-rotate(0deg) brightness(1);
+                }
+                50% { 
+                    background-position: 100% 50%;
+                    filter: hue-rotate(8deg) brightness(1.02);
+                }
+            }
+
+            @keyframes ambientMove {
+                0%, 100% { 
+                    transform: translate(0, 0) scale(1);
+                    opacity: 1;
+                }
+                50% { 
+                    transform: translate(3%, -2%) scale(1.03);
+                    opacity: 0.95;
+                }
+            }
+
+            body.has-maximized-card {
+                overflow: hidden;
+            }
+
+            body.is-mobile {
+                overflow-y: auto;
+            }
+
+            #particles {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 1;
+            }
+
+            .particle {
+                position: absolute;
+                width: 4px;
+                height: 4px;
+                background: rgba(255, 255, 255, 0.6);
+                border-radius: 50%;
+                animation: float 20s infinite ease-in-out;
+            }
+
+            @keyframes float {
+                0%, 100% { transform: translateY(0) translateX(0); opacity: 0; }
+                10% { opacity: 1; }
+                90% { opacity: 1; }
+                100% { transform: translateY(-100vh) translateX(50px); opacity: 0; }
+            }
+
+            #fireworks {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 999999;
+            }
+
+            .firework-particle {
+                position: absolute;
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                pointer-events: none;
+            }
+
+            @keyframes firework-explode {
+                0% {
+                    transform: translate(0, 0) scale(1);
+                    opacity: 1;
+                }
+                100% {
+                    transform: translate(var(--tx), var(--ty)) scale(0);
+                    opacity: 0;
+                }
+            }
+
+            #board {
+                position: relative;
+                width: 100vw;
+                height: 100dvh;
+                overflow: hidden;
+                z-index: 2;
+                padding: 3%;
+            }
+
+            body.is-mobile #board {
+                height: auto;
+                min-height: 100dvh;
+            }
+
+            .card {
+                position: absolute;
+                width: 220px;
+                border-radius: 12px;
+                box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+                background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.85));
+                backdrop-filter: blur(10px);
+                border: none;
+                overflow: hidden;
+                opacity: 0;
+                transform-origin: center;
+                transition: transform 0.525s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.05s, 
+                            opacity 0.525s ease 0.05s, 
+                            left 0.525s ease,
+                            top 0.525s ease, 
+                            width 0.525s ease, 
+                            height 0.525s ease,
+                            border-radius 0.525s ease,
+                            box-shadow 0.525s ease 0.05s;
+            }
+
+            .card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+                transition: left 0.5s;
+            }
+
+            .card:hover::before {
+                left: 100%;
+            }
+
+            .card:hover {
+                box-shadow: 0 10px 35px rgba(0, 0, 0, 0.06);
+                transform: translateY(-3px) scale(1.02);
+            }
+
+            .card.dragging {
+                transition: none;
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+            }
+
+            .card.maximized {
+                position: fixed;
+                inset: 0;
+                width: 100vw;
+                height: 100vh;
+                height: 100dvh;
+                border-radius: 0;
+                box-shadow: none;
+                background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(250, 250, 255, 0.95));
+            }
+
+            .card-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 10px 12px;
+                background: rgba(255, 255, 255, 0.7);
+                cursor: grab;
+                user-select: none;
+                touch-action: pan-y;
+            }
+
+            .card-header.dragging {
+                cursor: grabbing;
+            }
+
+            .window-controls {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .window-controls .control {
+                position: relative;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                border: 1px solid rgba(0, 0, 0, 0.08);
+                background: #ccc;
+                cursor: pointer;
+                outline: none;
+                padding: 0;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                transition: transform 0.2s ease, box-shadow 0.2s ease;
+            }
+
+            .window-controls .control:hover {
+                transform: scale(1.2);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            }
+
+            .window-controls .control.close {
+                background: linear-gradient(135deg, #ff6b6b, #ff5f57);
+                border-color: #e0443e;
+            }
+
+            .window-controls .control.minimize {
+                background: linear-gradient(135deg, #ffd93d, #febb2e);
+                border-color: #dea123;
+            }
+
+            .window-controls .control.maximize {
+                background: linear-gradient(135deg, #51cf66, #28c840);
+                border-color: #1aab2c;
+            }
+
+            .window-controls .control::after {
+                content: '';
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                opacity: 0;
+                transition: opacity 0.2s ease;
+            }
+
+            .card-header:hover .window-controls .control::after {
+                opacity: 0.8;
+            }
+
+            .window-controls .control.close::after {
+                content: '×';
+                width: auto;
+                height: auto;
+                background: none;
+                font-size: 10px;
+                line-height: 1;
+                font-weight: 700;
+                color: rgba(0, 0, 0, 0.7);
+            }
+
+            .window-controls .control.minimize::after {
+                width: 6px;
+                height: 2px;
+                background: rgba(0, 0, 0, 0.6);
+            }
+
+            .window-controls .control.maximize::after {
+                width: 6px;
+                height: 6px;
+                background: linear-gradient(
+                    45deg,
+                    rgba(0, 0, 0, 0.6) 0%,
+                    rgba(0, 0, 0, 0.6) 45%,
+                    transparent 45%,
+                    transparent 55%,
+                    rgba(0, 0, 0, 0.6) 55%,
+                    rgba(0, 0, 0, 0.6) 100%
+                );
+            }
+
+            .card-title {
+                font-size: 13px;
+                font-weight: 600;
+                color: rgba(0, 0, 0, 0.55);
+                padding-left: 10px;
+                flex: 1;
+            }
+
+            .card-body {
+                padding: 16px;
+                font-size: 16px;
+                line-height: 1.5;
+                font-weight: 400;
+                color: rgba(0, 0, 0, 0.65);
+                word-break: break-word;
+                overflow-wrap: anywhere;
+                white-space: normal;
+                text-shadow: none;
+            }
+
+            .card.maximized {
+                display: flex;
+                flex-direction: column;
+            }
+
+            .card.maximized .card-title {
+                display: none;
+            }
+
+            .card.maximized .card-body {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                height: 100%;
+                text-align: center;
+                padding: clamp(32px, min(10vw, 10vh), 128px);
+                padding-top: clamp(72px, min(14vw, 14vh), 192px);
+                font-size: clamp(48px, min(18vw, 18vh), 200px);
+                line-height: 1.05;
+            }
+
+            @media (max-width: 768px) {
+                .card {
+                    width: 180px;
+                    border-radius: 12px;
+                }
+
+                .card-body {
+                    padding: 14px;
+                    font-size: 14px;
+                    font-weight: 300;
+                }
+
+                .card-title {
+                    font-size: 12px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div id="particles"></div>
+        <div id="fireworks"></div>
+        <div id="board"></div>
+
+        <script>
+            const board = document.getElementById('board')
+            const fireworksContainer = document.getElementById('fireworks')
+            
+            // 创建粒子背景效果
+            function createParticles() {
+                const particlesContainer = document.getElementById('particles')
+                
+                for (let i = 0; i < 50; i++) {
+                    const particle = document.createElement('div')
+                    particle.className = 'particle'
+                    particle.style.left = `${Math.random() * 100}%`
+                    particle.style.animationDelay = `${Math.random() * 20}s`
+                    particle.style.animationDuration = `${15 + Math.random() * 10}s`
+                    particlesContainer.appendChild(particle)
+                }
+            }
+
+            // 烟花效果
+            function createFirework(x, y, color) {
+                const particleCount = 21
+                const colors = color ? [color] : ['#B8D5E8', '#B8D9E8', '#BDDBEA', '#C0DDEC', '#B5D7E6', '#BAD8E9', '#BED9EB']
+                
+                for (let i = 0; i < particleCount; i++) {
+                    const particle = document.createElement('div')
+                    particle.className = 'firework-particle'
+                    
+                    const angle = (Math.PI * 2 * i) / particleCount
+                    const velocity = 70 + Math.random() * 60
+                    const tx = Math.cos(angle) * velocity
+                    const ty = Math.sin(angle) * velocity
+                    
+                    particle.style.left = x + 'px'
+                    particle.style.top = y + 'px'
+                    particle.style.width = '3px'
+                    particle.style.height = '3px'
+                    particle.style.background = colors[Math.floor(Math.random() * colors.length)]
+                    particle.style.setProperty('--tx', tx + 'px')
+                    particle.style.setProperty('--ty', ty + 'px')
+                    particle.style.animation = `firework-explode ${0.9 + Math.random() * 0.3}s ease-out forwards`
+                    
+                    fireworksContainer.appendChild(particle)
+                    
+                    setTimeout(() => particle.remove(), 1200)
+                }
+            }
+
+            createParticles()
+            
+            const messages = [
+                '保持好心情',
+                '多喝水哦',
+                '今天辛苦啦',
+                '早点休息',
+                '记得吃水果',
+                '加油,你可以的',
+                '祝你顺利',
+                '保持微笑呀',
+                '愿所有烦恼都消失',
+                '期待下一次见面',
+                '梦想总会实现',
+                '天气冷了,多穿衣服',
+                '记得给自己放松',
+                '每天都要元气满满',
+                '今天也要好好爱自己',
+                '适当休息一下'
+            ]
+
+            const colors = [
+                'linear-gradient(125deg, #F0F7FF 0%, #EBF4FF 100%)',
+                'linear-gradient(125deg, #F5FFF8 0%, #F0FFF5 100%)',
+                'linear-gradient(125deg, #FFFEF5 0%, #FFFCF0 100%)',
+                'linear-gradient(125deg, #F0FFFA 0%, #EDFFF7 100%)',
+                'linear-gradient(125deg, #F5F9FF 0%, #F0F6FF 100%)',
+                'linear-gradient(125deg, #FFFEF8 0%, #FFFEF0 100%)',
+                'linear-gradient(125deg, #F3F8FF 0%, #F0F5FF 100%)',
+                'linear-gradient(125deg, #F8FFF5 0%, #F5FFF2 100%)'
+            ]
+
+            const cardStates = new WeakMap()
+            const cardPositions = [] // 存储已生成卡片的位置
+            const MAXIMIZED_LAYER = 1000000
+            let activeMaximizedCard = null
+            const pointerMediaQuery = window.matchMedia('(pointer: coarse)')
+            let isMobile = pointerMediaQuery.matches || window.innerWidth <= 768
+            let maxCards = isMobile ? 120 : 180
+            const initialCardCount = isMobile ? 18 : 30
+            let spawnInterval = isMobile ? 700 : 400
+            let zIndexCursor = 200
+            let spawnTimer = null
+
+            document.body.classList.toggle('is-mobile', isMobile)
+
+            function randomFrom(array) {
+                return array[Math.floor(Math.random() * array.length)]
+            }
+
+            function clamp(value, min, max) {
+                return Math.min(Math.max(value, min), max)
+            }
+
+            function applyTransform(card, state) {
+                const scale = state.scale ?? 1
+                const angle = state.angle ?? 0
+                card.style.transform = `scale(${scale}) rotate(${angle}deg)`
+            }
+
+            function bringToFront(card) {
+                if (card === activeMaximizedCard) {
+                    card.style.zIndex = MAXIMIZED_LAYER
+                    return
+                }
+
+                zIndexCursor += 1
+                if (activeMaximizedCard && zIndexCursor >= MAXIMIZED_LAYER) {
+                    zIndexCursor = MAXIMIZED_LAYER - 1
+                }
+
+                card.style.zIndex = zIndexCursor
+            }
+
+            function updateBodyMaximizedState() {
+                document.body.classList.toggle(
+                    'has-maximized-card',
+                    Boolean(activeMaximizedCard)
+                )
+            }
+
+            function scheduleNextSpawn() {
+                clearTimeout(spawnTimer)
+                spawnTimer = setTimeout(() => {
+                    if (!document.hidden) {
+                        createCard()
+                    }
+                    scheduleNextSpawn()
+                }, spawnInterval)
+            }
+
+            function syncMobileMode() {
+                const nextIsMobile =
+                    pointerMediaQuery.matches || window.innerWidth <= 768
+                if (nextIsMobile === isMobile) return
+
+                isMobile = nextIsMobile
+                maxCards = isMobile ? 120 : 180
+                spawnInterval = isMobile ? 700 : 400
+                document.body.classList.toggle('is-mobile', isMobile)
+                scheduleNextSpawn()
+            }
+
+            function checkOverlap(x, y, width, height, padding = 30) {
+                for (let pos of cardPositions) {
+                    const dx = Math.abs(x - pos.x)
+                    const dy = Math.abs(y - pos.y)
+                    
+                    if (dx < (width + pos.width) / 2 + padding && 
+                        dy < (height + pos.height) / 2 + padding) {
+                        return true
+                    }
+                }
+                return false
+            }
+
+            function findNonOverlappingPosition(cardWidth, cardHeight, horizontalMargin, verticalMargin) {
+                const maxAttempts = 50
+                let attempt = 0
+                
+                while (attempt < maxAttempts) {
+                    const left = horizontalMargin + 
+                        Math.random() * Math.max(window.innerWidth - cardWidth - horizontalMargin * 2, 0)
+                    const top = verticalMargin + 
+                        Math.random() * Math.max(window.innerHeight - cardHeight - verticalMargin * 2, 0)
+                    
+                    if (!checkOverlap(left, top, cardWidth, cardHeight)) {
+                        return { left, top }
+                    }
+                    
+                    attempt++
+                }
+                
+                // 如果找不到不重叠的位置,返回随机位置
+                return {
+                    left: horizontalMargin + 
+                        Math.random() * Math.max(window.innerWidth - cardWidth - horizontalMargin * 2, 0),
+                    top: verticalMargin + 
+                        Math.random() * Math.max(window.innerHeight - cardHeight - verticalMargin * 2, 0)
+                }
+            }
+
+            function handleBoardClick(event) {
+                const control = event.target.closest('.control')
+                const card = event.target.closest('.card')
+                
+                if (!control) return
+
+                if (!card || !board.contains(card)) return
+
+                event.preventDefault()
+
+                if (control.classList.contains('close')) {
+                    closeCard(card)
+                } else if (control.classList.contains('minimize')) {
+                    minimizeCard(card)
+                } else if (control.classList.contains('maximize')) {
+                    toggleMaximize(card)
+                }
+            }
+
+            function handleCardBodyClick(event) {
+                // 只在点击卡片主体(非header、非控制按钮)时触发
+                if (event.target.closest('.card-header')) return
+                if (event.target.closest('.control')) return
+                
+                const card = event.target.closest('.card')
+                if (!card || !board.contains(card)) return
+
+                const state = cardStates.get(card)
+                if (!state || state.closing || state.dragging) return
+
+                // 取消自动关闭定时器
+                if (state.autoCloseTimer) {
+                    clearTimeout(state.autoCloseTimer)
+                    state.autoCloseTimer = null
+                }
+
+                // 触发烟花效果
+                const rect = card.getBoundingClientRect()
+                const x = rect.left + rect.width / 2
+                const y = rect.top + rect.height / 2
+                createFirework(x, y)
+
+                // 延迟一点让烟花先绽放,然后关闭卡片
+                setTimeout(() => {
+                    closeCard(card)
+                }, 150)
+            }
+
+            function handleBoardPointerDown(event) {
+                const card = event.target.closest('.card')
+                if (!card || !board.contains(card)) return
+
+                const control = event.target.closest('.control')
+                const header = event.target.closest('.card-header')
+                const pointerType = event.pointerType || 'mouse'
+                const isPrimaryPointer = event.isPrimary !== false
+
+                if (
+                    header &&
+                    !control &&
+                    pointerType !== 'touch' &&
+                    isPrimaryPointer
+                ) {
+                    startDrag(event, card)
+                    return
+                }
+
+                bringToFront(card)
+            }
+
+            function handleBoardDoubleClick(event) {
+                const header = event.target.closest('.card-header')
+                if (!header || event.target.closest('.control')) return
+
+                const card = header.closest('.card')
+                if (!card || !board.contains(card)) return
+
+                toggleMaximize(card)
+            }
+
+            board.addEventListener('click', handleBoardClick)
+            board.addEventListener('click', handleCardBodyClick)
+            board.addEventListener('pointerdown', handleBoardPointerDown)
+            board.addEventListener('dblclick', handleBoardDoubleClick)
+
+            function closeCard(card) {
+                const state = cardStates.get(card)
+                if (!state || state.closing) return
+                
+                // 清除自动关闭定时器
+                if (state.autoCloseTimer) {
+                    clearTimeout(state.autoCloseTimer)
+                    state.autoCloseTimer = null
+                }
+                
+                // 从位置数组中移除
+                const index = cardPositions.findIndex(pos => 
+                    pos.x === state.left && pos.y === state.top
+                )
+                if (index > -1) {
+                    cardPositions.splice(index, 1)
+                }
+                
+                if (card === activeMaximizedCard) {
+                    activeMaximizedCard = null
+                    updateBodyMaximizedState()
+                }
+                state.closing = true
+                state.scale = 0.98
+                card.style.opacity = '0'
+                applyTransform(card, state)
+
+                const handleTransitionEnd = event => {
+                    if (event.propertyName === 'opacity') {
+                        card.removeEventListener('transitionend', handleTransitionEnd)
+                        card.remove()
+                    }
+                }
+
+                card.addEventListener('transitionend', handleTransitionEnd)
+            }
+
+            function minimizeCard(card) {
+                const state = cardStates.get(card)
+                if (!state || state.closing) return
+
+                const runMinimize = () => {
+                    state.closing = true
+                    bringToFront(card)
+                    const bottom = Math.max(window.innerHeight - 24, 0)
+                    const targetLeft = clamp(
+                        state.left,
+                        16,
+                        Math.max(window.innerWidth - card.offsetWidth - 16, 16)
+                    )
+
+                    state.left = targetLeft
+                    state.top = bottom
+                    state.scale = 0.1
+                    state.angle = 0
+                    card.style.left = `${targetLeft}px`
+                    card.style.top = `${bottom}px`
+                    card.style.opacity = '0.35'
+                    applyTransform(card, state)
+
+                    const handleTransitionEnd = event => {
+                        if (event.propertyName === 'transform') {
+                            card.removeEventListener('transitionend', handleTransitionEnd)
+                            card.remove()
+                        }
+                    }
+
+                    card.addEventListener('transitionend', handleTransitionEnd)
+                }
+
+                if (state.maximized) {
+                    restoreFromMaximize(card, state)
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(runMinimize)
+                    })
+                    return
+                }
+
+                runMinimize()
+            }
+
+            function toggleMaximize(card) {
+                const state = cardStates.get(card)
+                if (!state || state.closing) return
+
+                if (state.maximized) {
+                    restoreFromMaximize(card, state)
+                } else {
+                    maximizeCard(card, state)
+                }
+            }
+
+            function maximizeCard(card, state) {
+                if (activeMaximizedCard && activeMaximizedCard !== card) {
+                    const activeState = cardStates.get(activeMaximizedCard)
+                    if (activeState) {
+                        restoreFromMaximize(activeMaximizedCard, activeState)
+                    }
+                }
+
+                // 暂停自动关闭定时器
+                if (state.autoCloseTimer) {
+                    clearTimeout(state.autoCloseTimer)
+                    state.autoCloseTimer = null
+                }
+
+                state.beforeMaximize = {
+                    left: state.left,
+                    top: state.top,
+                    scale: state.scale ?? 1,
+                    angle: state.angle ?? 0,
+                    width: card.offsetWidth,
+                    height: card.offsetHeight,
+                    inlinePosition: card.style.position
+                }
+
+                card.classList.add('maximized')
+                card.style.position = 'fixed'
+                card.style.left = '0px'
+                card.style.top = '0px'
+                card.style.width = '100vw'
+                card.style.height = '100dvh'
+                card.style.borderRadius = '0'
+
+                state.left = 0
+                state.top = 0
+                state.scale = 1
+                state.angle = 0
+                applyTransform(card, state)
+                activeMaximizedCard = card
+                bringToFront(card)
+                state.maximized = true
+                updateBodyMaximizedState()
+            }
+
+            function restoreFromMaximize(card, state) {
+                const previous = state.beforeMaximize
+                if (!previous) return
+
+                card.classList.remove('maximized')
+                card.style.position = previous.inlinePosition || 'absolute'
+                card.style.left = `${previous.left}px`
+                card.style.top = `${previous.top}px`
+                card.style.width = `${previous.width}px`
+                card.style.height = `${previous.height}px`
+                card.style.borderRadius = '12px'
+
+                state.left = previous.left
+                state.top = previous.top
+                state.scale = previous.scale ?? 1
+                state.angle = previous.angle ?? state.angle ?? 0
+                applyTransform(card, state)
+                state.maximized = false
+                if (activeMaximizedCard === card) {
+                    activeMaximizedCard = null
+                    updateBodyMaximizedState()
+                }
+                bringToFront(card)
+                setTimeout(() => {
+                    if (!state.maximized) {
+                        card.style.width = ''
+                        card.style.height = ''
+                        card.style.borderRadius = ''
+                        if (previous.inlinePosition) {
+                            card.style.position = previous.inlinePosition
+                        } else {
+                            card.style.position = ''
+                        }
+                        state.beforeMaximize = null
+                    }
+                }, 360)
+            }
+
+            function startDrag(event, card) {
+                const control = event.target.closest('.control')
+                if (control) return
+
+                const state = cardStates.get(card)
+                if (!state || state.closing || state.maximized) return
+
+                event.preventDefault()
+                bringToFront(card)
+
+                const header = card.querySelector('.card-header')
+                card.classList.add('dragging')
+                header.classList.add('dragging')
+
+                state.dragging = true
+                state.dragOffsetX = event.clientX - state.left
+                state.dragOffsetY = event.clientY - state.top
+
+                let dragFrame = null
+                let pendingLeft = state.left
+                let pendingTop = state.top
+
+                const commitDrag = () => {
+                    dragFrame = null
+                    const maxLeft = Math.max(window.innerWidth - card.offsetWidth, 0)
+                    const maxTop = Math.max(window.innerHeight - card.offsetHeight, 0)
+                    state.left = clamp(pendingLeft, -card.offsetWidth * 0.4, maxLeft)
+                    state.top = clamp(pendingTop, -card.offsetHeight * 0.4, maxTop)
+                    card.style.left = `${state.left}px`
+                    card.style.top = `${state.top}px`
+                }
+
+                const handlePointerMove = moveEvent => {
+                    if (!state.dragging) return
+
+                    pendingLeft = moveEvent.clientX - state.dragOffsetX
+                    pendingTop = moveEvent.clientY - state.dragOffsetY
+                    if (dragFrame === null) {
+                        dragFrame = requestAnimationFrame(commitDrag)
+                    }
+                }
+
+                const handlePointerUp = () => {
+                    state.dragging = false
+                    card.classList.remove('dragging')
+                    header.classList.remove('dragging')
+                    if (dragFrame !== null) {
+                        cancelAnimationFrame(dragFrame)
+                        commitDrag()
+                    }
+                    document.removeEventListener('pointermove', handlePointerMove)
+                    document.removeEventListener('pointerup', handlePointerUp)
+                }
+
+                document.addEventListener('pointermove', handlePointerMove)
+                document.addEventListener('pointerup', handlePointerUp)
+            }
+
+            function createCard() {
+                const card = document.createElement('div')
+                card.className = 'card'
+
+                const color = randomFrom(colors)
+                const angleRange = isMobile ? 6 : 10
+                const angle = (Math.random() - 0.5) * angleRange
+                const entryScale = isMobile ? 0.8 : 0.65
+                const cardWidth = isMobile ? 180 : 220
+                const cardHeight = isMobile ? 130 : 140
+                const horizontalMargin = isMobile ? 18 : 24
+                const verticalMargin = isMobile ? 18 : 28
+                
+                // 查找不重叠的位置
+                const position = findNonOverlappingPosition(cardWidth, cardHeight, horizontalMargin, verticalMargin)
+                const left = position.left
+                const top = position.top
+
+                card.style.background = color
+                card.style.left = `${left}px`
+                card.style.top = `${top}px`
+                card.style.opacity = '0'
+                if (activeMaximizedCard && zIndexCursor >= MAXIMIZED_LAYER - 2) {
+                    zIndexCursor = MAXIMIZED_LAYER - 2
+                }
+                card.style.zIndex = ++zIndexCursor
+
+                card.innerHTML = `
+                    <div class="card-header">
+                        <div class="window-controls">
+                            <button class="control close" type="button" aria-label="关闭"></button>
+                            <button class="control minimize" type="button" aria-label="最小化"></button>
+                            <button class="control maximize" type="button" aria-label="最大化"></button>
+                        </div>
+                        <div class="card-title">温馨提示</div>
+                    </div>
+                    <div class="card-body">${randomFrom(messages)}</div>
+                `
+
+                const state = {
+                    angle,
+                    scale: entryScale,
+                    left,
+                    top,
+                    maximized: false,
+                    closing: false,
+                    autoCloseTimer: null
+                }
+
+                cardStates.set(card, state)
+                applyTransform(card, state)
+                board.appendChild(card)
+
+                // 记录卡片位置
+                cardPositions.push({
+                    x: left,
+                    y: top,
+                    width: cardWidth,
+                    height: cardHeight
+                })
+
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        state.scale = 1
+                        applyTransform(card, state)
+                        card.style.opacity = '1'
+                    })
+                })
+
+                // 5秒后自动关闭卡片
+                state.autoCloseTimer = setTimeout(() => {
+                    if (!state.closing && !state.maximized && board.contains(card)) {
+                        closeCard(card)
+                    }
+                }, 5000)
+
+                if (board.children.length > maxCards) {
+                    const oldest = board.firstElementChild
+                    if (oldest && oldest !== card) {
+                        const oldState = cardStates.get(oldest)
+                        if (oldState) {
+                            const index = cardPositions.findIndex(pos => 
+                                pos.x === oldState.left && pos.y === oldState.top
+                            )
+                            if (index > -1) {
+                                cardPositions.splice(index, 1)
+                            }
+                        }
+                        oldest.remove()
+                    }
+                }
+            }
+
+            for (let i = 0; i < initialCardCount; i++) {
+                setTimeout(createCard, i * (isMobile ? 60 : 40))
+            }
+
+            scheduleNextSpawn()
+
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) {
+                    scheduleNextSpawn()
+                }
+            })
+
+            if (typeof pointerMediaQuery.addEventListener === 'function') {
+                pointerMediaQuery.addEventListener('change', syncMobileMode)
+            } else if (typeof pointerMediaQuery.addListener === 'function') {
+                pointerMediaQuery.addListener(syncMobileMode)
+            }
+
+            window.addEventListener('resize', syncMobileMode)
+        </script>
+    </body>
+</html>
